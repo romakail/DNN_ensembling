@@ -66,3 +66,7 @@ target/
 
 #Idea
 .idea*
+
+# Data & models
+/Data/*
+/Checkpoints/*
