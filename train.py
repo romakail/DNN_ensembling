@@ -125,7 +125,7 @@ def learning_rate_schedule(base_lr, epoch, total_epochs):
     return factor * base_lr
 
 
-criterion = F.cross_entropy
+criterion = torch.nn.CrossEntropyLoss()
 regularizer = None if args.curve is None else curves.l2_regularizer(args.wd)
 optimizer = torch.optim.SGD(
     filter(lambda param: param.requires_grad, model.parameters()),
@@ -158,6 +158,7 @@ for epoch in range(start_epoch, args.epochs + 1):
     time_ep = time.time()
 
     lr = learning_rate_schedule(args.lr, epoch, args.epochs)
+    print ('lr = ', lr)
     utils.adjust_learning_rate(optimizer, lr)
 
     train_res = utils.train(loaders['train'], model, optimizer, criterion, regularizer)

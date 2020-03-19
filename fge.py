@@ -74,7 +74,8 @@ loaders, num_classes = data.loaders(
 
 architecture = getattr(models, args.model)
 model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-criterion = F.cross_entropy
+# criterion = F.cross_entropy
+criterion = torch.nn.CrossEntropyLoss()
 
 checkpoint = torch.load(args.ckpt)
 start_epoch = checkpoint['epoch'] + 1

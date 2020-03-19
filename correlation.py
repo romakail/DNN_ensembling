@@ -41,7 +41,6 @@ def correlation_among_models (models, dataloader, device, one_hot=False):
         predictions[iter] = torch.cat(predictions[iter], dim=0)
 
     if one_hot:
-        print ('hui')
         for idx, prediction in enumerate(predictions):
             predictions[idx] = F.one_hot(prediction.argmax(dim=1)).float()
 
@@ -53,4 +52,4 @@ def correlation_among_models (models, dataloader, device, one_hot=False):
         for j in range(i, n_models):
             cor_matrix[i, j] = cor_matrix[j, i] = (
                 predictions_correlation(predictions[i], predictions[j]).mean())
-
+    return cor_matrix
