@@ -59,6 +59,7 @@ class VGGBase(nn.Module):
             nn.Linear(512, 512),
             nn.ReLU(inplace=True),
             nn.Linear(512, num_classes),
+            nn.Softmax(dim=1)
         )
 
         for m in self.modules():
