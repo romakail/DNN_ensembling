@@ -89,6 +89,9 @@ optimizer = torch.optim.SGD(
 )
 optimizer.load_state_dict(checkpoint['optimizer_state'])
 
+test_res = utils.test(loaders['test'], model, criterion)
+print ('Initial quality: ', test_res['accuracy'])
+
 ensemble_size = 0
 predictions_sum = np.zeros((len(loaders['test'].dataset), num_classes))
 

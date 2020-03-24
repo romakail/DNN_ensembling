@@ -30,10 +30,10 @@ def correlation_over_classes (model1, model2, dataloader, device=torch.device('c
 
     return predictions_correlation(prediction1, prediction2)
 
-def correlation_among_models (models, dataloader, device, one_hot=False):
+def correlation_among_models (model_list, dataloader, device=torch.device('cpu'), one_hot=False):
 
     predictions = []
-    for iter, model in tqdm(enumerate(models)):
+    for iter, model in tqdm(enumerate(model_list)):
         model.eval().to(device)
         predictions.append([])
         for input, _ in dataloader:
@@ -41,16 +41,14 @@ def correlation_among_models (models, dataloader, device, one_hot=False):
         predictions[iter] = torch.cat(predictions[iter], dim=0)
 
     if one_hot:
-        print ('hui')
         for idx, prediction in enumerate(predictions):
             predictions[idx] = F.one_hot(prediction.argmax(dim=1)).float()
 
-    print(predictions[0][0, :])
-
-    n_models = len(models)
-    cor_matrix = np.zeros([n_models, n_models], dtype=float)
-    for i in range(n_models):
-        for j in range(i, n_models):
+    n_model_list = len(model_list)
+    cor_matrix = np.zeros([n_model_list, n_model_list], dtype=float)
+    for i in range(n_model_list):
+        for j in range(i, n_model_list):
             cor_matrix[i, j] = cor_matrix[j, i] = (
                 predictions_correlation(predictions[i], predictions[j]).mean())
+    return cor_matrix
 
