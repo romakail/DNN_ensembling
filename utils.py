@@ -15,13 +15,22 @@ def l2_regularizer(weight_decay):
     return regularizer
 
 
+# def cyclic_learning_rate(epoch, cycle, alpha_1, alpha_2):
+#     def schedule(iter):
+#         t = ((epoch % cycle) + iter) / cycle
+#         if t < 0.5:
+#             return alpha_1 * (1.0 - 2.0 * t) + alpha_2 * 2.0 * t
+#         else:
+#             return alpha_1 * (2.0 * t - 1.0) + alpha_2 * (2.0 - 2.0 * t)
+#     return schedule
+
 def cyclic_learning_rate(epoch, cycle, alpha_1, alpha_2):
     def schedule(iter):
         t = ((epoch % cycle) + iter) / cycle
         if t < 0.5:
-            return alpha_1 * (1.0 - 2.0 * t) + alpha_2 * 2.0 * t
+            return alpha_1 * 2.0 * t + alpha_2 * (1.0 - 2.0 * t)
         else:
-            return alpha_1 * (2.0 * t - 1.0) + alpha_2 * (2.0 - 2.0 * t)
+            return alpha_1 * (2.0 - 2.0 * t) + alpha_2 * (2.0 * t - 1.0)
     return schedule
 
 

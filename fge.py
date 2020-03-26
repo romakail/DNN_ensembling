@@ -77,7 +77,8 @@ model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 criterion = torch.nn.CrossEntropyLoss()
 
 checkpoint = torch.load(args.ckpt)
-start_epoch = checkpoint['epoch'] + 1
+# start_epoch = checkpoint['epoch'] + 1
+start_epoch = checkpoint['epoch']
 model.load_state_dict(checkpoint['model_state'])
 model.cuda()
 
@@ -105,12 +106,14 @@ for epoch in range(args.epochs):
     time_ep = time.time() - time_ep
     predictions, targets = utils.predictions(loaders['test'], model)
     ens_acc = None
-    if (epoch % args.cycle + 1) == args.cycle // 2:
+#     if (epoch % args.cycle + 1) == args.cycle // 2:
+    if (epoch % args.cycle) == 0:
         ensemble_size += 1
         predictions_sum += predictions
         ens_acc = 100.0 * np.mean(np.argmax(predictions_sum, axis=1) == targets)
 
-    if (epoch + 1) % (args.cycle // 2) == 0:
+#     if (epoch + 1) % (args.cycle // 2) == 0:
+    if (epoch) % (args.cycle // 2) == 0:
         utils.save_checkpoint(
             args.dir,
             start_epoch + epoch,
