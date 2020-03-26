@@ -1,7 +1,10 @@
+import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm_notebook as tqdm
+
+epsilon = 1e-45
 
 def predictions_correlation(prediction1, prediction2):
     assert len(prediction1.shape) == 2
@@ -30,7 +33,7 @@ def correlation_over_classes (model1, model2, dataloader, device=torch.device('c
 
     return predictions_correlation(prediction1, prediction2)
 
-def correlation_among_models (model_list, dataloader, device=torch.device('cpu'), one_hot=False):
+def correlation_Nmodels (model_list, dataloader, device=torch.device('cpu'), one_hot=False):
 
     predictions = []
     for iter, model in tqdm(enumerate(model_list)):
@@ -52,3 +55,52 @@ def correlation_among_models (model_list, dataloader, device=torch.device('cpu')
                 predictions_correlation(predictions[i], predictions[j]).mean())
     return cor_matrix
 
+def cross_entropy (pred, target):
+    assert (pred.shape == target.shape)
+    print ('1',  pred[100] + epsilon)
+    print ('2', (pred[100] + epsilon).log())
+#     print ('2', (target * pred.log()).sum())
+#     print ('3', - (target * pred.log()).sum(dim=1).mean().item())
+    return - (target * (pred + epsilon).log()).sum(dim=1).mean().item()
+
+def cross_entropy_2models (pred_model, ground_truth_model, dataloader, device=torch.device('cpu')):
+    pred_model.eval().to(device)
+    ground_truth_model.eval().to(device)
+    
+    pred   = []
+    target = []
+    
+    for input, _ in dataloader:
+        pred  .append(pred_model        (input.detach().to(device)).detach().cpu())
+        target.append(ground_truth_model(input.detach().to(device)).detach().cpu())
+    
+    pred   = torch.cat(pred  , dim=0)
+    target = torch.cat(target, dim=0)
+    
+    return cross_entropy(pred, target)
+
+def cross_entropy_Nmodels (models, dataloader, device=torch.device('cpu'), mean=False):
+    
+    predictions = []
+    for iter, model in tqdm(enumerate(models)):
+        model.eval().to(device)
+        predictions.append([])
+        for input, _ in dataloader:
+            predictions[iter].append(model(input.detach().to(device)).detach().cpu())
+        predictions[iter] = torch.cat(predictions[iter], dim=0)
+    
+    n_model_list = len(models)
+    CE_matrix = np.zeros([n_model_list, n_model_list], dtype=float)
+    
+    if mean:
+        for i in range(n_model_list):
+            for j in range(n_model_list):
+                CE_matrix[i, j] = (
+                    cross_entropy(predictions[i], predictions[j]) +
+                    cross_entropy(predictions[j], predictions[i])) / 2
+    else:
+        for i in range(n_model_list):
+            for j in range(n_model_list):
+                CE_matrix[i, j] = cross_entropy(predictions[i], predictions[j])
+    return CE_matrix
+    
