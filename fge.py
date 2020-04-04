@@ -54,7 +54,7 @@ args = parser.parse_args()
 
 assert args.cycle % 2 == 0, 'Cycle length should be even'
 
-os.makedirs(args.dir, exist_ok=True)
+os.makedirs(args.dir, exist_ok=False)
 with open(os.path.join(args.dir, 'fge.sh'), 'w') as f:
     f.write(' '.join(sys.argv))
     f.write('\n')
@@ -98,6 +98,14 @@ predictions_sum = np.zeros((len(loaders['test'].dataset), num_classes))
 
 columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'ens_acc', 'time']
 
+utils.save_checkpoint(
+            args.dir,
+            start_epoch,
+            name='fge',
+            model_state=model.state_dict(),
+            optimizer_state=optimizer.state_dict()
+        )
+
 for epoch in range(args.epochs):
     time_ep = time.time()
     lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
@@ -107,13 +115,13 @@ for epoch in range(args.epochs):
     predictions, targets = utils.predictions(loaders['test'], model)
     ens_acc = None
 #     if (epoch % args.cycle + 1) == args.cycle // 2:
-    if (epoch % args.cycle) == 0:
+    if (epoch + 1) % args.cycle == 0:
         ensemble_size += 1
         predictions_sum += predictions
         ens_acc = 100.0 * np.mean(np.argmax(predictions_sum, axis=1) == targets)
 
 #     if (epoch + 1) % (args.cycle // 2) == 0:
-    if (epoch) % (args.cycle // 2) == 0:
+    if (epoch + 1) % (args.cycle // 2) == 0:
         utils.save_checkpoint(
             args.dir,
             start_epoch + epoch,
