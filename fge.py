@@ -47,6 +47,8 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='weight decay (default: 1e-4)')
+parser.add_argument('--device', type=int, default=0, metavar='N',
+                    help='number of device to train on (default: 0)')
 
 parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
@@ -62,6 +64,9 @@ with open(os.path.join(args.dir, 'fge.sh'), 'w') as f:
 torch.backends.cudnn.benchmark = True
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
+
+device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
+torch.cuda.set_device(device)
 
 loaders, num_classes = data.loaders(
     args.dataset,

@@ -60,6 +60,8 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='weight decay (default: 1e-4)')
+parser.add_argument('--device', type=int, default=0, metavar='N',
+                    help='number of device to train on (default: 0)')
 
 parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
@@ -74,6 +76,9 @@ torch.backends.cudnn.benchmark = True
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 
+device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
+torch.cuda.set_device(device)
+
 loaders, num_classes = data.loaders(
     args.dataset,
     args.data_path,
@@ -82,6 +87,16 @@ loaders, num_classes = data.loaders(
     args.transform,
     args.use_test
 )
+
+train_len = 0
+test_len = 0
+
+for (x, _) in loaders['train']:
+    train_len += x.shape[0]
+for (x, _) in loaders['test']:
+    test_len += x.shape[0]
+
+print ('Train_len = ', train_len, 'test_len = ', test_len)
 
 architecture = getattr(models, args.model)
 
@@ -111,6 +126,7 @@ else:
         if args.init_linear:
             print('Linear initialization.')
             model.init_linear()
+
 model.cuda()
 
 
