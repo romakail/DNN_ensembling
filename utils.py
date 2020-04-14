@@ -66,15 +66,16 @@ def train(train_loader, model, optimizer, criterion, regularizer=None, lr_schedu
         loss = criterion(output, target)
         if regularizer is not None:
             loss += regularizer(model)
-
+                
         optimizer.zero_grad()
+
         loss.backward()
         optimizer.step()
-
+        
         loss_sum += loss.item() * input.size(0)
         pred = output.data.argmax(1, keepdim=True)
         correct += pred.eq(target.data.view_as(pred)).sum().item()
-
+        
     return {
         'loss': loss_sum / len(train_loader.dataset),
         'accuracy': correct * 100.0 / len(train_loader.dataset),

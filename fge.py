@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import data
 import models
 import utils
+import regularization
 
 parser = argparse.ArgumentParser(description='FGE training')
 
@@ -49,6 +50,10 @@ parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='weight decay (default: 1e-4)')
 parser.add_argument('--device', type=int, default=0, metavar='N',
                     help='number of device to train on (default: 0)')
+parser.add_argument('--regularizer', type=str, default=None, metavar='REGULARIZER',
+                    help='regularizer type (None/MSE2/MAE2) (default: None)')
+parser.add_argument('--reg_wd', type=float, default=0, metavar='WD',
+                    help='coefficient in regularizer between 2 networks')
 
 parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
@@ -103,6 +108,12 @@ predictions_sum = np.zeros((len(loaders['test'].dataset), num_classes))
 
 columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'ens_acc', 'time']
 
+if args.regularizer is None:
+    regularizer = None
+elif args.regularizer == 'MSE2':
+    regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
+    
+
 utils.save_checkpoint(
             args.dir,
             start_epoch,
@@ -114,7 +125,7 @@ utils.save_checkpoint(
 for epoch in range(args.epochs):
     time_ep = time.time()
     lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
-    train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule)
+    train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
     test_res = utils.test(loaders['test'], model, criterion)
     time_ep = time.time() - time_ep
     predictions, targets = utils.predictions(loaders['test'], model)
@@ -134,7 +145,12 @@ for epoch in range(args.epochs):
             model_state=model.state_dict(),
             optimizer_state=optimizer.state_dict()
         )
-
+        
+    if args.regularizer is not None and (epoch + 1) % (args.cycle) == 0:
+        regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
+    if args.regularizer is not None and (epoch + 1) % (args.cycle // 2) == args.cycle // 2:
+        regularizer = None
+        
     values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],
               test_res['accuracy'], ens_acc, time_ep]
     table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
