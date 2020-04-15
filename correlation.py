@@ -1,4 +1,5 @@
 import sys
+import math as m
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -103,4 +104,27 @@ def cross_entropy_Nmodels (models, dataloader, device=torch.device('cpu'), mean=
             for j in range(n_model_list):
                 CE_matrix[i, j] = cross_entropy(predictions[i], predictions[j])
     return CE_matrix
+
+def layers_diff (model1, model2, device=torch.device('cpu')):
+    model1.to(device)
+    model2.to(device)
+    
+    with torch.no_grad():
+        table = []
+        for idx, (module1, module2) in enumerate(zip(model1.modules(), model2.modules())):
+            if type(module1) == type(module2) == torch.nn.modules.conv.Conv2d:
+                for key in module1.state_dict().keys():
+                    diff = module1.state_dict()[key] - module2.state_dict()[key]
+                    numel = diff.numel()
+                    L1 = diff.abs().mean().item()
+                    L2 = m.sqrt((diff ** 2).mean().item())
+                    table.append({
+                        'Num'      : idx,
+                        'Layer'    : key,
+                        'N_params' : numel,
+                        'L1'       : round(L1, 3),
+                        'L2'       : round(L2, 3)})
+    return table
+            
+    
     
