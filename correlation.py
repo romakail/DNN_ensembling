@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm_notebook as tqdm
+from scipy.stats import wasserstein_distance
 
 epsilon = 1e-45
 
@@ -114,16 +115,22 @@ def layers_diff (model1, model2, device=torch.device('cpu')):
         for idx, (module1, module2) in enumerate(zip(model1.modules(), model2.modules())):
             if type(module1) == type(module2) == torch.nn.modules.conv.Conv2d:
                 for key in module1.state_dict().keys():
-                    diff = module1.state_dict()[key] - module2.state_dict()[key]
+                    p1 = module1.state_dict()[key]
+                    p2 = module2.state_dict()[key]
+                    diff = p1 - p2
                     numel = diff.numel()
                     L1 = diff.abs().mean().item()
                     L2 = m.sqrt((diff ** 2).mean().item())
+                    cos = ((p1 * p2).sum() / (p1**2).sum().sqrt() / (p2**2).sum().sqrt()).item()
+                    was = wasserstein_distance(p1.view(-1).numpy(), p2.view(-1).numpy())
                     table.append({
                         'Num'      : idx,
                         'Layer'    : key,
                         'N_params' : numel,
                         'L1'       : round(L1, 3),
-                        'L2'       : round(L2, 3)})
+                        'L2'       : round(L2, 3),
+                        'Cos'      : round(cos, 3),
+                        'Was'      : round(was, 3)})
     return table
             
     

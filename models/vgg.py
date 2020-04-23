@@ -2,7 +2,7 @@
     VGG model definition
     ported from https://github.com/pytorch/vision/blob/master/torchvision/models/vgg.py
 """
-
+ 
 import math
 import torch.nn as nn
 
@@ -40,6 +40,9 @@ def make_layers(config, batch_norm=False, fix_points=None):
             activation_blocks[-1].append(nn.ReLU(inplace=True))
             in_channels = channels
         poolings.append(nn.MaxPool2d(kernel_size=2, stride=2))
+#         poolings.append(nn.AvgPool2d(kernel_size=2, stride=2))
+#         poolings.append(nn.Conv2d(in_channels, in_channels, kernel_size=2, stride=2))
+
     return layer_blocks, activation_blocks, poolings
 
 
@@ -50,6 +53,9 @@ class VGGBase(nn.Module):
         self.layer_blocks = layer_blocks
         self.activation_blocks = activation_blocks
         self.poolings = poolings
+        print ('Lenghts :', len(self.layer_blocks), len(self.activation_blocks), len(self.poolings))
+        for idx, layer in enumerate(self.layer_blocks):
+            print(idx, len(layer))
 
         self.classifier = nn.Sequential(
             nn.Dropout(),

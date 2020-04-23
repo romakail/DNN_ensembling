@@ -98,34 +98,12 @@ for (x, _) in loaders['test']:
 
 print ('Train_len = ', train_len, 'test_len = ', test_len)
 
+# print (dir(models))
 architecture = getattr(models, args.model)
 
-if args.curve is None:
-    model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-else:
-    curve = getattr(curves, args.curve)
-    model = curves.CurveNet(
-        num_classes,
-        curve,
-        architecture.curve,
-        args.num_bends,
-        args.fix_start,
-        args.fix_end,
-        architecture_kwargs=architecture.kwargs,
-    )
-    base_model = None
-    if args.resume is None:
-        for path, k in [(args.init_start, 0), (args.init_end, args.num_bends - 1)]:
-            if path is not None:
-                if base_model is None:
-                    base_model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-                checkpoint = torch.load(path)
-                print('Loading %s as point #%d' % (path, k))
-                base_model.load_state_dict(checkpoint['model_state'])
-                model.import_base_parameters(base_model, k)
-        if args.init_linear:
-            print('Linear initialization.')
-            model.init_linear()
+model = architecture.base(num_classes=num_classes, **architecture.kwargs)
+
+# model = architecture()
 
 model.cuda()
 
@@ -199,6 +177,13 @@ for epoch in range(start_epoch, args.epochs + 1):
     else:
         table = table.split('\n')[2]
     print(table)
+    
+#     for idx, module in enumerate(model.modules()):
+#         if type(module) == torch.nn.modules.conv.Conv2d:
+#             p = module.state_dict()['weight']
+#             print ('[', idx, '] ', round(p.sum().item(), 3), end=' ', sep='')
+#     print (' ')
+    
 
 if args.epochs % args.save_freq != 0:
     utils.save_checkpoint(
