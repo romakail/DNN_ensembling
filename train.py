@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import sys
 import tabulate
 import time
@@ -63,7 +64,7 @@ parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
 parser.add_argument('--device', type=int, default=0, metavar='N',
                     help='number of device to train on (default: 0)')
 
-parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
+parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
 args = parser.parse_args()
 
@@ -73,6 +74,9 @@ with open(os.path.join(args.dir, 'command.sh'), 'w') as f:
     f.write('\n')
 
 torch.backends.cudnn.benchmark = True
+
+if args.seed == 0:
+    args.seed = random.randint(0, 1000000)   
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 
@@ -90,12 +94,10 @@ loaders, num_classes = data.loaders(
 
 train_len = 0
 test_len = 0
-
 for (x, _) in loaders['train']:
     train_len += x.shape[0]
 for (x, _) in loaders['test']:
     test_len += x.shape[0]
-
 print ('Train_len = ', train_len, 'test_len = ', test_len)
 
 # print (dir(models))

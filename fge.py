@@ -55,7 +55,7 @@ parser.add_argument('--regularizer', type=str, default=None, metavar='REGULARIZE
 parser.add_argument('--reg_wd', type=float, default=0, metavar='WD',
                     help='coefficient in regularizer between 2 networks')
 
-parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
+parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
 args = parser.parse_args()
 
@@ -67,6 +67,8 @@ with open(os.path.join(args.dir, 'fge.sh'), 'w') as f:
     f.write('\n')
 
 torch.backends.cudnn.benchmark = True
+if args.seed == 0:
+    args.seed = random.randint(0, 1000000)   
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 
