@@ -1,6 +1,7 @@
 import argparse
 import numpy as np
 import os
+import random
 import sys
 import tabulate
 import time
@@ -50,10 +51,15 @@ parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='weight decay (default: 1e-4)')
 parser.add_argument('--device', type=int, default=0, metavar='N',
                     help='number of device to train on (default: 0)')
+
 parser.add_argument('--regularizer', type=str, default=None, metavar='REGULARIZER',
                     help='regularizer type (None/MSE2/MAE2) (default: None)')
 parser.add_argument('--reg_wd', type=float, default=0, metavar='WD',
-                    help='coefficient in regularizer between 2 networks')
+                    help='coefficient in regularizer between 2 networks (default: 0)')
+parser.add_argument('--weighted_samples', type=str, default=None, metavar='WEIGHT',
+                    help='method of weighting samples before crossentropy (Lin/Exp/AdaLast) (default: None)')
+parser.add_argument('--weight_coef', type=float, default=0, metavar='WD',
+                    help='intensity of increasing of errors weights (default: 0)')
 
 parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
@@ -75,24 +81,38 @@ torch.cuda.manual_seed(args.seed)
 device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
 torch.cuda.set_device(device)
 
+
+architecture = getattr(models, args.model)
+model = architecture.base(num_classes=10, **architecture.kwargs)
+
+if args.weighted_samples is None:
+    criterion = torch.nn.CrossEntropyLoss()
+else:
+    criterion = torch.nn.CrossEntropyLoss(reduction='none')
+    
+checkpoint = torch.load(args.ckpt)
+# start_epoch = checkpoint['epoch'] + 1
+start_epoch = checkpoint['epoch']
+model.load_state_dict(checkpoint['model_state'])
+model.cuda()
+
 loaders, num_classes = data.loaders(
     args.dataset,
     args.data_path,
     args.batch_size,
     args.num_workers,
     args.transform,
-    args.use_test
+    args.use_test,
+    shuffle_train=False,
+    weights_generator=regularization.dataset_weights_generator(
+        model,
+        args.weight_coef,
+        func_type=args.weighted_samples,
+        batch_size=args.batch_size),
 )
 
-architecture = getattr(models, args.model)
-model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-criterion = torch.nn.CrossEntropyLoss()
-
-checkpoint = torch.load(args.ckpt)
-# start_epoch = checkpoint['epoch'] + 1
-start_epoch = checkpoint['epoch']
-model.load_state_dict(checkpoint['model_state'])
-model.cuda()
+print ("Initial quality test: " , utils.test(loaders['test'], model, criterion))
+print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
 
 optimizer = torch.optim.SGD(
     model.parameters(),
@@ -102,8 +122,8 @@ optimizer = torch.optim.SGD(
 )
 optimizer.load_state_dict(checkpoint['optimizer_state'])
 
-test_res = utils.test(loaders['test'], model, criterion)
-print ('Initial quality: ', test_res['accuracy'])
+# test_res = utils.test(loaders['test'], model, criterion)
+# print ('Initial quality: ', test_res['accuracy'])
 
 ensemble_size = 0
 predictions_sum = np.zeros((len(loaders['test'].dataset), num_classes))
@@ -127,18 +147,20 @@ utils.save_checkpoint(
 for epoch in range(args.epochs):
     time_ep = time.time()
     lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
-    train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+    if args.weighted_samples is None:
+        train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+    else:
+        train_res = utils.train_weighted(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
     test_res = utils.test(loaders['test'], model, criterion)
     time_ep = time.time() - time_ep
     predictions, targets = utils.predictions(loaders['test'], model)
     ens_acc = None
-#     if (epoch % args.cycle + 1) == args.cycle // 2:
+    
     if (epoch + 1) % args.cycle == 0:
         ensemble_size += 1
         predictions_sum += predictions
         ens_acc = 100.0 * np.mean(np.argmax(predictions_sum, axis=1) == targets)
 
-#     if (epoch + 1) % (args.cycle // 2) == 0:
     if (epoch + 1) % (args.cycle // 2) == 0:
         utils.save_checkpoint(
             args.dir,
@@ -152,6 +174,24 @@ for epoch in range(args.epochs):
         regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
     if args.regularizer is not None and (epoch + 1) % (args.cycle // 2) == args.cycle // 2:
         regularizer = None
+    
+    if args.weighted_samples is not None and (epoch + 1) % args.cycle == 0:
+        loaders, num_classes = data.loaders(
+            args.dataset,
+            args.data_path,
+            args.batch_size,
+            args.num_workers,
+            args.transform,
+            args.use_test,
+            shuffle_train=False,
+            weights_generator=regularization.dataset_weights_generator(
+                model,
+                args.weight_coef,
+                func_type=args.weighted_samples,
+                batch_size=args.batch_size),
+        )
+        
+        
         
     values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],
               test_res['accuracy'], ens_acc, time_ep]

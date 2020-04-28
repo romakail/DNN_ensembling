@@ -81,6 +81,39 @@ def train(train_loader, model, optimizer, criterion, regularizer=None, lr_schedu
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
+def train_weighted(train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None):
+    loss_sum = 0.0
+    correct = 0.0
+
+    num_iters = len(train_loader)
+    model.train()
+    for iter, (input, target) in enumerate(train_loader):
+        if lr_schedule is not None:
+            lr = lr_schedule(iter / num_iters)
+            adjust_learning_rate(optimizer, lr)
+        input = input.cuda(device=None, non_blocking=False)
+        labels = target['label'].cuda(device=None, non_blocking=False)
+        output = model(input)
+        loss = criterion(output, labels)
+        loss = torch.mean(loss * target['weight'].cuda(device=None, non_blocking=False))
+        
+        if regularizer is not None:
+            loss += regularizer(model)
+                
+        optimizer.zero_grad()
+
+        loss.backward()
+        optimizer.step()
+        
+        loss_sum += loss.item() * input.size(0)
+        pred = output.data.argmax(1, keepdim=True)
+        correct += pred.eq(labels.data.view_as(pred)).sum().item()
+        
+    return {
+        'loss': loss_sum / len(train_loader.dataset),
+        'accuracy': correct * 100.0 / len(train_loader.dataset),
+    }
+
 
 def test(test_loader, model, criterion, regularizer=None, **kwargs):
     loss_sum = 0.0
@@ -91,10 +124,13 @@ def test(test_loader, model, criterion, regularizer=None, **kwargs):
 
     for input, target in test_loader:
         input = input.cuda(device=None, non_blocking=False)
-        target = target.cuda(device=None, non_blocking=False)
+        if isinstance (target, dict):
+            target = target['label'].cuda(device=None, non_blocking=False)
+        else:
+            target = target.cuda(device=None, non_blocking=False)
 
         output = model(input, **kwargs)
-        nll = criterion(output, target)
+        nll = criterion(output, target).mean()
         loss = nll.clone()
         if regularizer is not None:
             loss += regularizer(model)

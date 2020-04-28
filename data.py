@@ -40,12 +40,17 @@ class Transforms:
 
 
 def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=False,
-            shuffle_train=True):
+            shuffle_train=True, weights_generator=None):
     ds = getattr(torchvision.datasets, dataset)
     path = os.path.join(path, dataset.lower())
     transform = getattr(getattr(Transforms, dataset), transform_name)
     train_set = ds(path, train=True, download=True, transform=transform.train)
 
+    n_classes = max(train_set.targets) + 1
+    if weights_generator is not None:
+        weights = weights_generator (train_set)
+        train_set.targets = [{'label': label, 'weight': weight.item()} for label, weight in zip(train_set.targets, weights)]
+    
     if use_test:
         print('You are going to run models on the test set. Are you sure?')
         test_set = ds(path, train=False, download=True, transform=transform.test)
@@ -62,9 +67,7 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
         test_set.train = False
         test_set.data = test_set.data[-5000:]
         test_set.targets = test_set.targets[-5000:]
-#         delattr(test_set, 'data')
-#         delattr(test_set, 'targets')
-
+        
     return {
                'train': torch.utils.data.DataLoader(
                    train_set,
@@ -80,4 +83,4 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
                    num_workers=num_workers,
                    pin_memory=True
                ),
-           }, max(train_set.targets) + 1
+           }, n_classes
