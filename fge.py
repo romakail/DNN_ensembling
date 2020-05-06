@@ -108,6 +108,7 @@ loaders, num_classes = data.loaders(
         model,
         args.weight_coef,
         func_type=args.weighted_samples,
+        normalize = True,
         batch_size=args.batch_size),
 )
 
