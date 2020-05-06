@@ -26,7 +26,7 @@ class TwoModelsMSE ():
 
 
 
-def linear_weigh_func(logits, labels, coef=1):
+def linear_weigh_func(logits, labels, coef=1, normalize=False):
     assert logits.shape[0] == labels.shape[0]
     prediction = softmax(logits, dim=1)
     probas = prediction.take(
@@ -37,7 +37,7 @@ def linear_weigh_func(logits, labels, coef=1):
         w *= w.shape[0]
     return w
 
-def exponential_weight_func(logits, labels, coef=1):
+def exponential_weight_func(logits, labels, coef=1, normalize=False):
     prediction = softmax(logits, dim=1)
     probas = prediction.take(
         (labels + torch.arange(0, prediction.numel(), prediction.shape[1])).cuda())
@@ -47,7 +47,7 @@ def exponential_weight_func(logits, labels, coef=1):
         w *= w.shape[0]
     return w
 
-def adalast_weight_func(logits, labels, coef=1):
+def adalast_weight_func(logits, labels, coef=1, normalize=False):
     true_logits = logits.take(
         (labels + torch.arange(0, logits.numel(), logits.shape[1])).cuda())
     true_logits = true_logits * (logits.shape[1] - 1) / logits.shape[1] - logits.mean(dim=1)
@@ -61,22 +61,21 @@ def adalast_weight_func(logits, labels, coef=1):
     return w
 
 class AdaBoost ():
-    def __init__(self, normalize=False):
-        self.normalize = normalize
+    def __init__(self):
         self.logits = None
-    def weight_func(self, coef, logits, label):
+    def weight_func(self, logits, labels, coef=1, normalize=False):
         if self.logits is None:
             self.logits = logits
         else:
             self.logits += logits
         true_logits = self.logits.take(
-            (label + torch.arange(0, self.logits.numel(), self.logits.shape[1])).cuda())
+            (labels + torch.arange(0, self.logits.numel(), self.logits.shape[1])).cuda())
         true_logits = true_logits * (self.logits.shape[1] - 1) / self.logits.shape[1] - logits.mean(dim=1)
     #             print (label.device)
     #             print (self.logits.device)
-        correct = 2 * torch.eq(label.cuda(), self.logits.argmax(dim=1)) - 1
+        correct = 2 * torch.eq(labels.cuda(), self.logits.argmax(dim=1)) - 1
         w = torch.exp(- coef * true_logits * correct)
-        if self.normalize:
+        if normalize:
             w /= torch.sum(w)
             w *= w.shape[0]
         return w
@@ -92,7 +91,7 @@ def dataset_weights_generator(model, coef, func_type=None, normalize=False, batc
     elif func_type == 'AdaLast':
         weight_func = adalast_weight_func
     elif func_type == 'AdaBoost':
-        adaboost_container = AdaBoost(normalize=normalize)
+        adaboost_container = AdaBoost()
         weight_func = adaboost_container.weight_func
     elif func_type == 'GradBoost':
         return None
@@ -132,7 +131,7 @@ def dataset_weights_generator(model, coef, func_type=None, normalize=False, batc
             logits = torch.cat(logits, dim=0)
             labels = torch.tensor(labels, dtype=torch.long)
 
-            weights = weight_func(logits, labels, coef=coef)
+            weights = weight_func(logits, labels, coef=coef, normalize=normalize)
 
             print ('Shape :', weights.shape, 'Weights_sum :', weights.sum().item())
             print ('Max :', weights.max().item(), 'Min :', weights.min().item())
