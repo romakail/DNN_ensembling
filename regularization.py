@@ -120,6 +120,8 @@ def dataset_weights_generator(model, coef, func_type=None, normalize=False, batc
         return weights
     
     return weights_generator
+
+# Some minor changes
                                        
                                        
                                        
