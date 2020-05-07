@@ -184,16 +184,16 @@ for epoch in range(args.epochs):
             args.num_workers,
             args.transform,
             args.use_test,
-            shuffle_train=False,
+            shuffle_train=True,
             weights_generator=regularization.dataset_weights_generator(
                 model,
                 args.weight_coef,
                 func_type=args.weighted_samples,
+                normalize=True
                 batch_size=args.batch_size),
         )
         
-        
-        
+
     values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],
               test_res['accuracy'], ens_acc, time_ep]
     table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
