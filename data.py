@@ -40,17 +40,25 @@ class Transforms:
 
 
 def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=False,
-            shuffle_train=True, weights_generator=None):
+            shuffle_train=True, weights_generator=None, logits_generator=None):
     ds = getattr(torchvision.datasets, dataset)
     path = os.path.join(path, dataset.lower())
     transform = getattr(getattr(Transforms, dataset), transform_name)
     train_set = ds(path, train=True, download=True, transform=transform.train)
 
     n_classes = max(train_set.targets) + 1
-    if weights_generator is not None:
+    if   weights_generator is not None and logits_generator is     None:
         weights = weights_generator (train_set)
         train_set.targets = [{'label': label, 'weight': weight.item()} for label, weight in zip(train_set.targets, weights)]
-    
+    elif weights_generator is     None and logits_generator is not None:
+        logits = logits_generator (train_set)
+        train_set.targets = [{'label': label, 'logit' : logit} for label, logit  in zip(train_set.targets, logits)]
+    elif weights_generator is not None and logits_generator is not None:
+        weights = weights_generator (train_set)
+        logits = logits_generator (train_set)
+        train_set.targets = [{'label': label, 'weight': weight.item(), 'logit': logit}
+            for label, weight, logit in zip(train_set.targets, weights, logits)]
+
     if use_test:
         print('You are going to run models on the test set. Are you sure?')
         test_set = ds(path, train=False, download=True, transform=transform.test)
@@ -59,7 +67,7 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
 #         print (vars(train_set).keys())
 #         print (train_set.data.shape)
 #         print (len(train_set.targets))
-        
+
         train_set.data = train_set.data[:-5000]
         train_set.targets = train_set.targets[:-5000]
 
@@ -67,7 +75,7 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
         test_set.train = False
         test_set.data = test_set.data[-5000:]
         test_set.targets = test_set.targets[-5000:]
-        
+
     return {
                'train': torch.utils.data.DataLoader(
                    train_set,

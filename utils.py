@@ -66,16 +66,16 @@ def train(train_loader, model, optimizer, criterion, regularizer=None, lr_schedu
         loss = criterion(output, target)
         if regularizer is not None:
             loss += regularizer(model)
-                
+
         optimizer.zero_grad()
 
         loss.backward()
         optimizer.step()
-        
+
         loss_sum += loss.item() * input.size(0)
         pred = output.data.argmax(1, keepdim=True)
         correct += pred.eq(target.data.view_as(pred)).sum().item()
-        
+
     return {
         'loss': loss_sum / len(train_loader.dataset),
         'accuracy': correct * 100.0 / len(train_loader.dataset),
@@ -96,24 +96,61 @@ def train_weighted(train_loader, model, optimizer, criterion, regularizer=None, 
         output = model(input)
         loss = criterion(output, labels)
         loss = torch.mean(loss * target['weight'].cuda(device=None, non_blocking=False))
-        
+
         if regularizer is not None:
             loss += regularizer(model)
-                
+
         optimizer.zero_grad()
 
         loss.backward()
         optimizer.step()
-        
+
         loss_sum += loss.item() * input.size(0)
         pred = output.data.argmax(1, keepdim=True)
         correct += pred.eq(labels.data.view_as(pred)).sum().item()
-        
+
     return {
         'loss': loss_sum / len(train_loader.dataset),
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
+def train_boosting (train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None, boosting_lr=1.):
+    loss_sum = 0.0
+    correct = 0.0
+
+    num_iters = len(train_loader)
+    model.train()
+    for iter, (input, target) in enumerate(train_loader):
+        if lr_schedule is not None:
+            lr = lr_schedule(iter / num_iters)
+            adjust_learning_rate(optimizer, lr)
+        input = input.cuda(device=None, non_blocking=False)
+        labels = target['label'].cuda(device=None, non_blocking=False)
+        output = model(input)
+        loss = criterion(boosting_lr * output + target['logit'], labels)
+        if 'weight' in target.keys():
+            weights = target['weight']
+        else:
+            weights = torch.ones(output.shape[0], dtype=torch.float)
+
+        loss = torch.mean(loss * target['weight'].cuda(device=None, non_blocking=False))
+
+        if regularizer is not None:
+            loss += regularizer(model)
+
+        optimizer.zero_grad()
+
+        loss.backward()
+        optimizer.step()
+
+        loss_sum += loss.item() * input.size(0)
+        pred = output.data.argmax(1, keepdim=True)
+        correct += pred.eq(labels.data.view_as(pred)).sum().item()
+
+    return {
+        'loss': loss_sum / len(train_loader.dataset),
+        'accuracy': correct * 100.0 / len(train_loader.dataset),
+    }
 
 def test(test_loader, model, criterion, regularizer=None, **kwargs):
     loss_sum = 0.0
@@ -157,6 +194,17 @@ def predictions(test_loader, model, **kwargs):
         output = model(input, **kwargs)
         probs = F.softmax(output, dim=1)
         preds.append(probs.cpu().data.numpy())
+        targets.append(target.numpy())
+    return np.vstack(preds), np.concatenate(targets)
+
+
+def labels(test_loaders, model, **kwargs):
+    preds = []
+    targets = []
+    for input, target in test_loader:
+        input = input.cuda(device=None, non_blocking=False)
+        output = model(input, **kwargs)
+        preds.append(outputs.cpu().data.numpy())
         targets.append(target.numpy())
     return np.vstack(preds), np.concatenate(targets)
 
