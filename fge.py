@@ -103,7 +103,7 @@ loaders, num_classes = data.loaders(
     args.num_workers,
     args.transform,
     args.use_test,
-    shuffle_train=False,
+    shuffle_train=True,
     weights_generator=regularization.dataset_weights_generator(
         model,
         args.weight_coef,

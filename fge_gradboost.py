@@ -60,8 +60,8 @@ parser.add_argument('--weighted_samples', type=str, default=None, metavar='WEIGH
                     help='method of weighting samples before crossentropy (Lin/Exp/AdaLast/AdaBoost) (default: None)')
 parser.add_argument('--weight_coef', type=float, default=0, metavar='WD',
                     help='intensity of increasing of errors weights (default: 0)')
-parser.add_argument('--grad_boost', action='store_true',
-                    help='Enables gradient boosting algorithm over FGE (default=False)')
+# parser.add_argument('--grad_boost', action='store_true',
+#                     help='Enables gradient boosting algorithm over FGE (default=False)')
 parser.add_argument('--boost_lr', type=float, default=1.0, metavar='BOOST_LR',
                     help='boosting learning rate')
 
@@ -88,10 +88,7 @@ torch.cuda.set_device(device)
 architecture = getattr(models, args.model)
 model = architecture.base(num_classes=10, **architecture.kwargs)
 
-if args.weighted_samples is not None or args.grad_boost is not None:
-    criterion = torch.nn.CrossEntropyLoss(reduction='none')
-else:
-    criterion = torch.nn.CrossEntropyLoss()
+criterion = torch.nn.CrossEntropyLoss(reduction='none')
 
 checkpoint = torch.load(args.ckpt)
 # start_epoch = checkpoint['epoch'] + 1
@@ -106,7 +103,7 @@ loaders, num_classes = data.loaders(
     args.num_workers,
     args.transform,
     args.use_test,
-    shuffle_train=False,
+    shuffle_train=True,
     weights_generator=regularization.dataset_weights_generator(
         model,
         args.weight_coef,
@@ -154,12 +151,12 @@ utils.save_checkpoint(
 for epoch in range(args.epochs):
     time_ep = time.time()
     lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
-    if args.grad_boost:
-        train_res = utils.train_boosting(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
-    elif args.weighted_samples is None:
-        train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
-    else:
-        train_res = utils.train_weighted(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+    
+    train_res = utils.train_boosting(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+#     elif args.weighted_samples is None:
+#         train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+#     else:
+#         train_res = utils.train_weighted(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
     test_res = utils.test(loaders['test'], model, criterion)
     time_ep = time.time() - time_ep
 
@@ -193,7 +190,7 @@ for epoch in range(args.epochs):
             args.num_workers,
             args.transform,
             args.use_test,
-            shuffle_train=False,
+            shuffle_train=True,
             weights_generator=regularization.dataset_weights_generator(
                 model,
                 args.weight_coef,

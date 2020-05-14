@@ -51,8 +51,6 @@ def adalast_weight_func(logits, labels, coef=1, normalize=False):
     true_logits = logits.take(
         (labels + torch.arange(0, logits.numel(), logits.shape[1])).cuda())
     true_logits = true_logits * (logits.shape[1] - 1) / logits.shape[1] - logits.mean(dim=1)
-#             print (labels.device)
-#             print (logits.device)
     correct = 2 * torch.eq(labels.cuda(), logits.argmax(dim=1)) - 1
     w = torch.exp(- coef * true_logits * correct)
     if normalize:
@@ -71,10 +69,8 @@ class AdaBoost ():
         true_logits = self.logits.take(
             (labels + torch.arange(0, self.logits.numel(), self.logits.shape[1])).cuda())
         true_logits = true_logits * (self.logits.shape[1] - 1) / self.logits.shape[1] - logits.mean(dim=1)
-    #             print (label.device)
-    #             print (self.logits.device)
         correct = 2 * torch.eq(labels.cuda(), self.logits.argmax(dim=1)) - 1
-        w = torch.exp(- coef * true_logits * correct)
+        w = torch.exp(- coef * true_logits)
         if normalize:
             w /= torch.sum(w)
             w *= w.shape[0]
@@ -91,8 +87,8 @@ def dataset_weights_generator(model, coef, func_type=None, normalize=False, batc
     elif func_type == 'AdaLast':
         weight_func = adalast_weight_func
     elif func_type == 'AdaBoost':
-        adaboost_container = AdaBoost()
-        weight_func = adaboost_container.weight_func
+        adaboost_state_holder = AdaBoost()
+        weight_func = adaboost_state_holder.weight_func
     # elif func_type == 'GradBoost':
     #     return None
     else:
@@ -134,6 +130,7 @@ def dataset_logits_generator(model, batch_size=64):
     def logits_generator(dataset):
         with torch.no_grad():
             input_batch = []
+            logits = []
             for idx, (input, _) in enumerate(dataset):
                 input_batch.append(input.unsqueeze(0))
                 if (idx+1) % batch_size == 0:

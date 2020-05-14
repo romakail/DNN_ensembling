@@ -2,7 +2,8 @@ import os
 import torch
 import torchvision
 import torchvision.transforms as transforms
-
+from torch.utils.data import Dataset
+from PIL import Image
 
 class Transforms:
 
@@ -38,9 +39,40 @@ class Transforms:
 
     CIFAR100 = CIFAR10
 
-
+class GradBoostDataset (Dataset):
+    def __init__(self, inputs_tensor, targets_tensor, labels_tensor, transform=None):
+        self.inputs  = inputs_tensor
+        self.labels  = labels_tensor
+        self.targets = targets_tensor
+        self.transform = transform
+        assert len(inputs_tensor) == len(labels_tensor)
+        assert len(labels_tensor) == len(targets_tensor)
+    
+    def __len__(self):
+        return len(self.inputs)
+    
+    def __getitem__(self, idx):
+#         print ("Inputs :", type(self.inputs[idx]))
+#         print ("Target :", type(self.targets[idx]))
+#         print ("Labels :", type(self.labels[idx]))
+        
+        img, target, label = self.inputs[idx], self.targets[idx], self.labels[idx]
+#         img, target = self.inputs[idx], self.targets[idx]
+#         img = self.inputs[idx]
+    
+        img = Image.fromarray(img)
+        
+        if self.transform is not None:
+            img = self.transform(img)
+            
+        return img, target, label
+#         return img, target
+#         return img
+        
+        
 def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=False,
             shuffle_train=True, weights_generator=None, logits_generator=None):
+#     print ("Weights_generator", weights_generator, "logits_generator", logits_generator)
     ds = getattr(torchvision.datasets, dataset)
     path = os.path.join(path, dataset.lower())
     transform = getattr(getattr(Transforms, dataset), transform_name)
@@ -50,14 +82,39 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
     if   weights_generator is not None and logits_generator is     None:
         weights = weights_generator (train_set)
         train_set.targets = [{'label': label, 'weight': weight.item()} for label, weight in zip(train_set.targets, weights)]
+        
     elif weights_generator is     None and logits_generator is not None:
-        logits = logits_generator (train_set)
-        train_set.targets = [{'label': label, 'logit' : logit} for label, logit  in zip(train_set.targets, logits)]
-    elif weights_generator is not None and logits_generator is not None:
-        weights = weights_generator (train_set)
-        logits = logits_generator (train_set)
-        train_set.targets = [{'label': label, 'weight': weight.item(), 'logit': logit}
-            for label, weight, logit in zip(train_set.targets, weights, logits)]
+#         print (dir(train_set))
+        logits = logits_generator(train_set).cpu().detach()
+#         print (type(train_set.data))
+#         print (train_set.data.shape)
+        train_set = GradBoostDataset(
+            train_set.data, 
+            train_set.targets,
+            logits,
+            transform=transform.train)
+        
+        
+        
+        
+#     if   weights_generator is not None and logits_generator is     None:
+#         weights = weights_generator (train_set)
+#         train_set.targets = [{'label': label, 'weight': weight.item()} for label, weight in zip(train_set.targets, weights)]
+#     elif weights_generator is     None and logits_generator is not None:
+#         logits = logits_generator (train_set)
+#         print("Type(targets) :", type(train_set.targets))
+#         print("Type(logits) :",  type(logits), logits.shape)
+# #         train_set.targets = [{'label': label, 'logit' : logit} for label, logit  in zip(train_set.targets, logits)]
+#         train_set.targets = [{'label': label}.update for label, logit  in zip(train_set.targets, logits)]
+        
+#     elif weights_generator is not None and logits_generator is not None:
+#         weights = weights_generator (train_set)
+#         logits = logits_generator (train_set)
+#         print("Type(targets) :", type(train_set.targets))
+#         print("Type(weights) :", type(weights))
+#         print("Type(logits) :",  type(logits))
+#         train_set.targets = [{'label': label, 'weight': weight.item(), 'logit': logit}
+#             for label, weight, logit in zip(train_set.targets, weights, logits)]
 
     if use_test:
         print('You are going to run models on the test set. Are you sure?')

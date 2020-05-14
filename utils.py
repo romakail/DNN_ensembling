@@ -120,20 +120,30 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
 
     num_iters = len(train_loader)
     model.train()
-    for iter, (input, target) in enumerate(train_loader):
+    for iter, (input, labels, logits) in enumerate(train_loader):
+#         print ("Input  :", input.shape)
+#         print ("Labels :", labels.shape)
+#         print ("Logits :", logits.shape)
+        if isinstance(labels, dict):
+            labels  = labels['labels']
+            weights = labels['weights']
+        else:
+            weights = torch.ones(labels.shape, dtype=torch.float, device=torch.device('cuda'))
+        
         if lr_schedule is not None:
             lr = lr_schedule(iter / num_iters)
             adjust_learning_rate(optimizer, lr)
-        input = input.cuda(device=None, non_blocking=False)
-        labels = target['label'].cuda(device=None, non_blocking=False)
+        input  = input .cuda(device=None, non_blocking=False)
+        logits = logits.cuda(device=None, non_blocking=False)
+        labels = labels.cuda(device=None, non_blocking=False)
         output = model(input)
-        loss = criterion(boosting_lr * output + target['logit'], labels)
-        if 'weight' in target.keys():
-            weights = target['weight']
-        else:
-            weights = torch.ones(output.shape[0], dtype=torch.float)
-
-        loss = torch.mean(loss * target['weight'].cuda(device=None, non_blocking=False))
+        
+#         print("Output :", type(output), output.shape, output.device)
+#         print("Logits :", type(logits), logits.shape, logits.device)
+#         print("Labels :", type(labels), labels.shape, labels.device)
+        
+        loss = criterion(boosting_lr * output + logits, labels)
+        loss = torch.mean(loss * weights)
 
         if regularizer is not None:
             loss += regularizer(model)
@@ -159,7 +169,12 @@ def test(test_loader, model, criterion, regularizer=None, **kwargs):
 
     model.eval()
 
-    for input, target in test_loader:
+    for data in test_loader:
+        input  = data[0]
+        target = data[1]    
+        if len(data) > 2:
+            labels = data[2]
+        
         input = input.cuda(device=None, non_blocking=False)
         if isinstance (target, dict):
             target = target['label'].cuda(device=None, non_blocking=False)
@@ -198,10 +213,12 @@ def predictions(test_loader, model, **kwargs):
     return np.vstack(preds), np.concatenate(targets)
 
 
-def labels(test_loaders, model, **kwargs):
+def labels(test_loader, model, **kwargs):
     preds = []
     targets = []
-    for input, target in test_loader:
+    for data in test_loader:
+        input = data[0]
+        target = data[1]
         input = input.cuda(device=None, non_blocking=False)
         output = model(input, **kwargs)
         preds.append(outputs.cpu().data.numpy())
