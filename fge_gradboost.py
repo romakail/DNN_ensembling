@@ -86,7 +86,12 @@ device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
 torch.cuda.set_device(device)
 
 architecture = getattr(models, args.model)
-model = architecture.base(num_classes=10, **architecture.kwargs)
+
+if   args.dataset == "CIFAR10":
+    num_classes = 10
+elif args.dataset == "CIFAR100":
+    num_classes = 100
+model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 
 criterion = torch.nn.CrossEntropyLoss(reduction='none')
 
@@ -152,7 +157,14 @@ for epoch in range(args.epochs):
     time_ep = time.time()
     lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
     
-    train_res = utils.train_boosting(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
+    train_res = utils.train_boosting(
+        loaders['train'],
+        model,
+        optimizer,
+        criterion,
+        lr_schedule=lr_schedule,
+        regularizer=regularizer,
+        boost_lr=args.boost_lr)
 #     elif args.weighted_samples is None:
 #         train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
 #     else:
@@ -164,9 +176,9 @@ for epoch in range(args.epochs):
 
     if (epoch + 1) % args.cycle == 0:
         ensemble_size += 1
-        labels, targets = utils.labels(loaders['test'], model)
-        labels_sum += labels
-        ens_acc = 100.0 * np.mean(np.argmax(labels_sum, axis=1) == targets)
+        logits, targets = utils.logits(loaders['test'], model)
+        logits_sum += args.boost_lr * logits
+        ens_acc = 100.0 * np.mean(np.argmax(logits_sum, axis=1) == targets)
 
     if (epoch + 1) % (args.cycle // 2) == 0:
         utils.save_checkpoint(

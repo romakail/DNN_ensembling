@@ -83,7 +83,14 @@ torch.cuda.set_device(device)
 
 
 architecture = getattr(models, args.model)
-model = architecture.base(num_classes=10, **architecture.kwargs)
+
+if   args.dataset == "CIFAR10":
+    num_classes = 10
+elif args.dataset == "CIFAR100":
+    num_classes = 100
+else:
+    assert False
+model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 
 if args.weighted_samples is None:
     criterion = torch.nn.CrossEntropyLoss()

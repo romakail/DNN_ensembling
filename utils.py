@@ -114,7 +114,7 @@ def train_weighted(train_loader, model, optimizer, criterion, regularizer=None, 
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
-def train_boosting (train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None, boosting_lr=1.):
+def train_boosting (train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None, boost_lr=1.):
     loss_sum = 0.0
     correct = 0.0
 
@@ -146,7 +146,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
         loss = torch.mean(loss * weights)
 
         if regularizer is not None:
-            loss += regularizer(model)
+            loss += boost_lr * regularizer(model)
 
         optimizer.zero_grad()
 
@@ -213,7 +213,7 @@ def predictions(test_loader, model, **kwargs):
     return np.vstack(preds), np.concatenate(targets)
 
 
-def labels(test_loader, model, **kwargs):
+def logits(test_loader, model, **kwargs):
     preds = []
     targets = []
     for data in test_loader:
