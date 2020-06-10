@@ -202,7 +202,7 @@ for epoch in range(args.epochs):
 #         train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
 #     else:
 #         train_res = utils.train_weighted(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
-    test_res = utils.test(loaders['test'], model, criterion)
+    test_res = utils.test(loaders['test'], model, criterion, boost_lr=args.boost_lr)
     time_ep = time.time() - time_ep
 
     ens_acc = None
@@ -232,7 +232,10 @@ for epoch in range(args.epochs):
         loaders['train'].dataset.update_logits(
             logits_generator=regularization.dataset_logits_generator(
                 model,
-                transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
+                transform=getattr(getattr(
+                        data.Transforms,
+                        args.dataset),
+                    args.transform).train,
                 batch_size = args.batch_size))
         
 #         loaders, num_classes = data.loaders(
@@ -254,7 +257,6 @@ for epoch in range(args.epochs):
 #                 batch_size = args.batch_size),
 #         )
  
-
 
     values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],
         test_res['accuracy'], ens_acc, time_ep]

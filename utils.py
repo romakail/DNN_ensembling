@@ -150,7 +150,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
             lr = lr_schedule(iter / num_iters)
             adjust_learning_rate(optimizer, lr)
         input  = input .cuda(device=None, non_blocking=False)
-        logits = logits.cuda(device=None, non_blocking=False)
+        logits = logits.cuda(device=None, non_blocking=False).detach()
         labels = labels.cuda(device=None, non_blocking=False)
         output = model(input)
         
@@ -158,7 +158,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
 #         print("Logits :", type(logits), logits.shape, logits.device)
 #         print("Labels :", type(labels), labels.shape, labels.device)
         
-        loss = criterion(boost_lr * output + logits, labels)
+        loss = criterion(logits + boost_lr * output, labels)
         loss = torch.mean(loss * weights)
 
         if regularizer is not None:
@@ -170,7 +170,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
         optimizer.step()
 
         loss_sum += loss.item() * input.size(0)
-        pred = output.data.argmax(1, keepdim=True)
+        pred = (logits + boost_lr * output).data.argmax(1, keepdim=True)
         correct += pred.eq(labels.data.view_as(pred)).sum().item()
 
     return {
@@ -178,7 +178,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
-def test(test_loader, model, criterion, regularizer=None, **kwargs):
+def test(test_loader, model, criterion, regularizer=None, boost_lr=1., **kwargs):
     loss_sum = 0.0
     nll_sum = 0.0
     correct = 0.0
@@ -189,7 +189,7 @@ def test(test_loader, model, criterion, regularizer=None, **kwargs):
         input  = data[0]
         target = data[1]    
         if len(data) > 2:
-            labels = data[2]
+            logits = data[2]
         
         input = input.cuda(device=None, non_blocking=False)
         if isinstance (target, dict):
@@ -198,6 +198,8 @@ def test(test_loader, model, criterion, regularizer=None, **kwargs):
             target = target.cuda(device=None, non_blocking=False)
 
         output = model(input, **kwargs)
+        if len(data) > 2:
+            output += boost_lr * logits
         nll = criterion(output, target).mean()
         loss = nll.clone()
         if regularizer is not None:
