@@ -33,6 +33,22 @@ def cyclic_learning_rate(epoch, cycle, alpha_1, alpha_2):
             return alpha_1 * (2.0 - 2.0 * t) + alpha_2 * (2.0 * t - 1.0)
     return schedule
 
+def linear_learning_rate(epoch, cycle, alpha_1, alpha_2):
+    def schedule(iter):
+        t = ((epoch % cycle) + iter) / cycle
+        return alpha_1 + (alpha_2 - alpha_1) * t
+    return schedule
+
+def slide_learning_rate(epoch, cycle, alpha_1, alpha_2):
+    def schedule(iter):
+        t = ((epoch % cycle) + iter) / cycle
+        if t <= 0.5:
+            return alpha_1
+        elif t <= 0.9:
+            return alpha_1 + (t - 0.5) / 0.4 * (alpha_2 - alpha_1)
+        else:
+            return alpha_2
+    return schedule
 
 def adjust_learning_rate(optimizer, lr):
     for param_group in optimizer.param_groups:
@@ -142,7 +158,7 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
 #         print("Logits :", type(logits), logits.shape, logits.device)
 #         print("Labels :", type(labels), labels.shape, labels.device)
         
-        loss = criterion(boosting_lr * output + logits, labels)
+        loss = criterion(boost_lr * output + logits, labels)
         loss = torch.mean(loss * weights)
 
         if regularizer is not None:
@@ -221,9 +237,9 @@ def logits(test_loader, model, **kwargs):
         target = data[1]
         input = input.cuda(device=None, non_blocking=False)
         output = model(input, **kwargs)
-        preds.append(outputs.cpu().data.numpy())
+        preds.append(output.cpu().data)
         targets.append(target.numpy())
-    return np.vstack(preds), np.concatenate(targets)
+    return torch.cat(preds, dim=0), np.concatenate(targets)
 
 
 def isbatchnorm(module):

@@ -64,6 +64,8 @@ parser.add_argument('--weight_coef', type=float, default=0, metavar='WD',
 #                     help='Enables gradient boosting algorithm over FGE (default=False)')
 parser.add_argument('--boost_lr', type=float, default=1.0, metavar='BOOST_LR',
                     help='boosting learning rate')
+parser.add_argument('--scheduler', type=str, default='cyclic', metavar='SCHEDULER',
+                    help='learning rate scheduler of every cycle (cyclic/linear/slide)')
 
 parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
@@ -95,6 +97,15 @@ model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 
 criterion = torch.nn.CrossEntropyLoss(reduction='none')
 
+if   args.scheduler == 'cyclic':
+    scheduler = utils.cyclic_learning_rate
+elif args.scheduler == 'linear':
+    scheduler = utils.linear_learning_rate
+elif args.scheduler == 'slide':
+    scheduler = utils.slide_learning_rate
+else:
+    raise AssertionError('I don`t know such scheduler')
+
 checkpoint = torch.load(args.ckpt)
 # start_epoch = checkpoint['epoch'] + 1
 start_epoch = checkpoint['epoch']
@@ -113,15 +124,37 @@ loaders, num_classes = data.loaders(
         model,
         args.weight_coef,
         func_type=args.weighted_samples,
-        normalize = True,
+        normalize=True,
         batch_size=args.batch_size),
     logits_generator=regularization.dataset_logits_generator(
         model,
-        batch_size = args.batch_size),
+        transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
+        batch_size=args.batch_size),
 )
 
-print ("Initial quality test: " , utils.test(loaders['test'], model, criterion))
-print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
+# Max = 0
+# Min = 0
+# for (_, _, logits) in loaders['train']:
+#     Max = max(Max, logits.max().item())
+#     Min = min(Min, logits.min().item())
+# print('[1] Min :', Min, 'Max :', Max)
+    
+# loaders['train'].dataset.update_logits(
+#     logits_generator=regularization.dataset_logits_generator(
+#         model,
+#         transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
+#         batch_size = args.batch_size))
+
+# Max = 0
+# Min = 0
+# for (_, _, logits) in loaders['train']:
+#     Max = max(Max, logits.max().item())
+#     Min = min(Min, logits.min().item())
+# print('[2] Min :', Min, 'Max :', Max)
+
+
+# print ("Initial quality test: " , utils.test(loaders['test'] , model, criterion))
+# print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
 
 optimizer = torch.optim.SGD(
     model.parameters(),
@@ -146,16 +179,16 @@ elif args.regularizer == 'MSE2':
 
 
 utils.save_checkpoint(
-            args.dir,
-            start_epoch,
-            name='fge',
-            model_state=model.state_dict(),
-            optimizer_state=optimizer.state_dict()
-        )
+    args.dir,
+    start_epoch,
+    name='fge',
+    model_state=model.state_dict(),
+    optimizer_state=optimizer.state_dict())
 
+logits_sum = 0
 for epoch in range(args.epochs):
     time_ep = time.time()
-    lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
+    lr_schedule = scheduler(epoch, args.cycle, args.lr_1, args.lr_2)
     
     train_res = utils.train_boosting(
         loaders['train'],
@@ -178,6 +211,7 @@ for epoch in range(args.epochs):
         ensemble_size += 1
         logits, targets = utils.logits(loaders['test'], model)
         logits_sum += args.boost_lr * logits
+        regularization.logits_info(logits, logits_sum=logits_sum)
         ens_acc = 100.0 * np.mean(np.argmax(logits_sum, axis=1) == targets)
 
     if (epoch + 1) % (args.cycle // 2) == 0:
@@ -195,24 +229,31 @@ for epoch in range(args.epochs):
         regularizer = None
 
     if args.weighted_samples is not None and (epoch + 1) % args.cycle == 0:
-        loaders, num_classes = data.loaders(
-            args.dataset,
-            args.data_path,
-            args.batch_size,
-            args.num_workers,
-            args.transform,
-            args.use_test,
-            shuffle_train=True,
-            weights_generator=regularization.dataset_weights_generator(
-                model,
-                args.weight_coef,
-                func_type=args.weighted_samples,
-                normalize = True,
-                batch_size=args.batch_size),
+        loaders['train'].dataset.update_logits(
             logits_generator=regularization.dataset_logits_generator(
                 model,
-                batch_size = args.batch_size),
-        )
+                transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
+                batch_size = args.batch_size))
+        
+#         loaders, num_classes = data.loaders(
+#             args.dataset,
+#             args.data_path,
+#             args.batch_size,
+#             args.num_workers,
+#             args.transform,
+#             args.use_test,
+#             shuffle_train=True,
+#             weights_generator=regularization.dataset_weights_generator(
+#                 model,
+#                 args.weight_coef,
+#                 func_type=args.weighted_samples,
+#                 normalize = True,
+#                 batch_size=args.batch_size),
+#             logits_generator=regularization.dataset_logits_generator(
+#                 model,
+#                 batch_size = args.batch_size),
+#         )
+ 
 
 
     values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],

@@ -1,5 +1,7 @@
 import os
 import torch
+import numpy as np
+from PIL import Image
 from copy import deepcopy
 from tqdm import tqdm
 
@@ -126,27 +128,44 @@ def dataset_weights_generator(model, coef, func_type=None, normalize=False, batc
 
     return weights_generator
 
-def dataset_logits_generator(model, batch_size=64):
-    def logits_generator(dataset):
+def dataset_logits_generator(model, transform, batch_size=64):
+    def logits_generator(input_tensor):
         with torch.no_grad():
             input_batch = []
             logits = []
-            for idx, (input, _) in enumerate(dataset):
+            for idx, input in enumerate(input_tensor):
+                input = Image.fromarray(input)
+                input = transform(input)
                 input_batch.append(input.unsqueeze(0))
                 if (idx+1) % batch_size == 0:
                     input_batch = torch.cat(input_batch, dim=0)
                     logits_batch = model(input_batch.cuda())
-                    logits.append(logits_batch)
+                    logits.append(logits_batch.cpu())
                     input_batch = []
-
+    
             input_batch = torch.cat(input_batch, dim=0)
             logits_batch = model(input_batch.cuda())
-            logits.append(logits_batch)
+            logits.append(logits_batch.cpu())
 
             logits = torch.cat(logits, dim=0)
 
-            print ('Shape :', logits.shape, 'Logits_mean :', logits.mean().item())
-            print ('Max :', logits.max().item(), 'Min :', logits.min().item())
+#             print ('Shape :', logits.shape, 'Logits_mean :', logits.mean().item())
+#             print ('Max :'  , logits.max().item(), 'Min :' , logits.min().item())
         return logits
 
     return logits_generator
+
+def logits_info(logits, logits_sum=None):
+    print ("+-----Test------")
+    print ("|Mean :", logits.mean().item(),
+           "Std", ((logits - logits.mean(dim=0, keepdim=True))**2).mean().sqrt().item())
+    print ("|Max :", logits.max().item(),
+           "Min :", logits.min().item())
+    if logits_sum is not None:
+        print ("|Sum Mean :", logits_sum.mean().item(),
+               "Sum Std", ((logits_sum - logits_sum.mean(dim=0, keepdim=True))**2).mean().sqrt().item())
+        print ("|Sum Max :", logits_sum.max().item(),
+               "|Sum Min :", logits_sum.min().item())
+    print ('+--------------')
+    
+    
