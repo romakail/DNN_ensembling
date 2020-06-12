@@ -130,7 +130,7 @@ def train_weighted(train_loader, model, optimizer, criterion, regularizer=None, 
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
-def train_boosting (train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None, boost_lr=1.):
+def train_gb (train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None, gb_version='classic', boost_lr=1.):
     loss_sum = 0.0
     correct = 0.0
 
@@ -154,11 +154,17 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
         labels = labels.cuda(device=None, non_blocking=False)
         output = model(input)
         
-#         print("Output :", type(output), output.shape, output.device)
-#         print("Logits :", type(logits), logits.shape, logits.device)
-#         print("Labels :", type(labels), labels.shape, labels.device)
+#         print("Logits :", type(logits), logits.shape, logits.dtype)
+#         print("Labels :", type(labels), labels.shape, labels.dtype)
+#         print("Output :", type(output), output.shape, output.dtype)
+#         raise AssertionError('STOP')
         
-        loss = criterion(logits + boost_lr * output, labels)
+        if   gb_version == 'simple':
+            loss = criterion(logits + boost_lr * output, labels)
+        elif gb_version == 'classic':
+            antigrad = one_hot(labels, logits.shape[1]) - F.softmax(logits, dim=1)
+            loss = criterion(output, antigrad).mean(dim=1)
+
         loss = torch.mean(loss * weights)
 
         if regularizer is not None:
@@ -178,19 +184,15 @@ def train_boosting (train_loader, model, optimizer, criterion, regularizer=None,
         'accuracy': correct * 100.0 / len(train_loader.dataset),
     }
 
-def test(test_loader, model, criterion, regularizer=None, boost_lr=1., **kwargs):
+
+def test(test_loader, model, criterion, regularizer=None, **kwargs):
     loss_sum = 0.0
     nll_sum = 0.0
     correct = 0.0
 
     model.eval()
 
-    for data in test_loader:
-        input  = data[0]
-        target = data[1]    
-        if len(data) > 2:
-            logits = data[2]
-        
+    for input, target in test_loader:
         input = input.cuda(device=None, non_blocking=False)
         if isinstance (target, dict):
             target = target['label'].cuda(device=None, non_blocking=False)
@@ -198,8 +200,6 @@ def test(test_loader, model, criterion, regularizer=None, boost_lr=1., **kwargs)
             target = target.cuda(device=None, non_blocking=False)
 
         output = model(input, **kwargs)
-        if len(data) > 2:
-            output += boost_lr * logits
         nll = criterion(output, target).mean()
         loss = nll.clone()
         if regularizer is not None:
@@ -216,6 +216,54 @@ def test(test_loader, model, criterion, regularizer=None, boost_lr=1., **kwargs)
         'accuracy': correct * 100.0 / len(test_loader.dataset),
     }
 
+
+def test_gb(test_loader, model, criterion, regularizer=None, gb_version='classic', boost_lr=1., **kwargs):
+    loss_sum = 0.0
+    nll_sum = 0.0
+    correct = 0.0
+
+    model.eval()
+
+    for input, target, logits in test_loader:
+#         print ('Len', len(data))
+#         input  = data[0]
+#         target = data[1]    
+#         if len(data) > 2:
+#             logits = data[2]
+        
+        input  = input .cuda(device=None, non_blocking=False)
+        target = target.cuda(device=None, non_blocking=False)
+        logits = logits.cuda(device=None, non_blocking=False)
+        
+        output = model(input, **kwargs)
+#         if len(data) > 2:
+        if   gb_version == 'simple':
+            nll = criterion(logits + boost_lr * output, labels).mean()
+            loss = nll.clone()
+        elif gb_version == 'classic':
+            antigrad = one_hot(target, logits.shape[1]) - F.softmax(logits, dim=1)
+            nll = criterion(output, antigrad).mean(dim=1).mean()
+            loss = torch.nn.CrossEntropyLoss()(logits + boost_lr * output, target)
+#         else:
+#             print ('What, why am i here?')
+#             nll = criterion(output, target).mean()
+            
+        
+#         if regularizer is not None:
+#             loss += regularizer(model)
+
+        nll_sum += nll.item() * input.size(0)
+        loss_sum += loss.item() * input.size(0)
+#         pred = output.data.argmax(1, keepdim=True)
+#         correct += pred.eq(target.data.view_as(pred)).sum().item()
+        pred = (logits + boost_lr * output).data.argmax(1, keepdim=True)
+        correct += pred.eq(target.data.view_as(pred)).sum().item()
+
+    return {
+        'nll': nll_sum / len(test_loader.dataset),
+        'loss': loss_sum / len(test_loader.dataset),
+        'accuracy': correct * 100.0 / len(test_loader.dataset),
+    }
 
 
 def predictions(test_loader, model, **kwargs):
@@ -295,3 +343,7 @@ def update_bn(loader, model, **kwargs):
         num_samples += batch_size
 
     model.apply(lambda module: _set_momenta(module, momenta))
+    
+def one_hot(batch ,depth):
+    ones = torch.eye(depth, dtype=batch.dtype, device=batch.device)
+    return ones.index_select(0,batch)
