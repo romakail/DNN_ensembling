@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 
-__all__ = ['VGG', 'vgg16', 'vgg16_bn', 'vgg19_bn', 'vgg19',]
+__all__ = ['VGG', 'vgg5', 'vgg5_bn', 'vgg16', 'vgg16_bn', 'vgg19_bn', 'vgg19',]
 
 cfgs = {
+    5  : [64, 'M', 128, 'M', 256, 'M', 512, 'M', 512, 'M'],
     16 : [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     19 : [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
@@ -72,6 +73,22 @@ class VGG(nn.Module):
 #                                               progress=progress)
 #         model.load_state_dict(state_dict)
 #     return model
+
+class vgg5:
+    base = VGG
+    kwargs = {
+        'depth': 5,
+        'batch_norm': False,
+        'init_weights': True,
+    }
+    
+class vgg5_bn:
+    base = VGG
+    kwargs = {
+        'depth': 5,
+        'batch_norm': True,
+        'init_weights': True,
+    }
 
 class vgg16:
     base = VGG

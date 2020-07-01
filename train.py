@@ -12,6 +12,8 @@ import data
 import models
 import utils
 
+# from torchsummary import summary
+
 
 parser = argparse.ArgumentParser(description='DNN curve training')
 parser.add_argument('--dir', type=str, default='/tmp/curve/', metavar='DIR',
@@ -103,11 +105,11 @@ print ('Train_len = ', train_len, 'test_len = ', test_len)
 # print (dir(models))
 architecture = getattr(models, args.model)
 
+
 model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-
-# model = architecture()
-
 model.cuda()
+# summary(model, (3, 32, 32))
+
 
 
 def learning_rate_schedule(base_lr, epoch, total_epochs):
