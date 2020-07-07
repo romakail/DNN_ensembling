@@ -57,13 +57,22 @@ parser.add_argument('--regularizer', type=str, default=None, metavar='REGULARIZE
 parser.add_argument('--reg_wd', type=float, default=0, metavar='WD',
                     help='coefficient in regularizer between 2 networks (default: 0)')
 parser.add_argument('--weighted_samples', type=str, default=None, metavar='WEIGHT',
-                    help='method of weighting samples before crossentropy (Lin/Exp/AdaLast) (default: None)')
+                    help='method of weighting samples before crossentropy (Lin/Exp/AdaLast/AdaBoost) (default: None)')
 parser.add_argument('--weight_coef', type=float, default=0, metavar='WD',
                     help='intensity of increasing of errors weights (default: 0)')
+# parser.add_argument('--grad_boost', action='store_true',
+#                     help='Enables gradient boosting algorithm over FGE (default=False)')
+parser.add_argument('--version', type=str, default='classic', metavar='GB_VERSION',
+                    help='Version of gradient boosting implementation (classic/simple).')
+parser.add_argument('--boost_lr', type=str, default='auto', metavar='BOOST_LR',
+                    help='boosting learning rate (auto/some float value)')
+parser.add_argument('--scheduler', type=str, default='cyclic', metavar='SCHEDULER',
+                    help='learning rate scheduler of every cycle (cyclic/linear/slide)')
 
 parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
 args = parser.parse_args()
+
 
 assert args.cycle % 2 == 0, 'Cycle length should be even'
 
@@ -74,36 +83,49 @@ with open(os.path.join(args.dir, 'fge.sh'), 'w') as f:
 
 torch.backends.cudnn.benchmark = True
 if args.seed == 0:
-    args.seed = random.randint(0, 1000000)   
+    args.seed = random.randint(0, 1000000)
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 
 device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
 torch.cuda.set_device(device)
 
-
 architecture = getattr(models, args.model)
+
+if (args.boost_lr == 'auto'):
+    boost_lr = 1.0
+else:
+    boost_lr = float(args.boost_lr)
 
 if   args.dataset == "CIFAR10":
     num_classes = 10
 elif args.dataset == "CIFAR100":
     num_classes = 100
-else:
-    assert False
 model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 
-if args.weighted_samples is None:
-    criterion = torch.nn.CrossEntropyLoss()
-else:
+if   args.version == 'classic':
+    criterion = torch.nn.MSELoss(reduction='none')
+elif args.version == 'simple':
     criterion = torch.nn.CrossEntropyLoss(reduction='none')
-    
+else:
+    raise AssertionError('I don`t know this implementation of gradient boosting')
+
+if   args.scheduler == 'cyclic':
+    scheduler = utils.cyclic_learning_rate
+elif args.scheduler == 'linear':
+    scheduler = utils.linear_learning_rate
+elif args.scheduler == 'slide':
+    scheduler = utils.slide_learning_rate
+else:
+    raise AssertionError('I don`t know such scheduler')
+
 checkpoint = torch.load(args.ckpt)
 # start_epoch = checkpoint['epoch'] + 1
 start_epoch = checkpoint['epoch']
 model.load_state_dict(checkpoint['model_state'])
 model.cuda()
 
-loaders, num_classes = data.loaders(
+loaders, num_classes = data.loaders_gb(
     args.dataset,
     args.data_path,
     args.batch_size,
@@ -111,16 +133,34 @@ loaders, num_classes = data.loaders(
     args.transform,
     args.use_test,
     shuffle_train=True,
-    weights_generator=regularization.dataset_weights_generator(
+    logits_generator=regularization.dataset_logits_generator(
         model,
-        args.weight_coef,
-        func_type=args.weighted_samples,
-        normalize = True,
+        transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
         batch_size=args.batch_size),
 )
 
-print ("Initial quality test: " , utils.test(loaders['test'], model, criterion))
-print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
+# Max = 0
+# Min = 0
+# for (_, _, logits) in loaders['train']:
+#     Max = max(Max, logits.max().item())
+#     Min = min(Min, logits.min().item())
+# print('[1] Min :', Min, 'Max :', Max)
+    
+# loaders['train'].dataset.update_logits(
+#     logits_generator=regularization.dataset_logits_generator(
+#         model,
+#         transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
+#         batch_size = args.batch_size))
+
+# Max = 0
+# Min = 0
+# for (_, _, logits) in loaders['train']:
+#     Max = max(Max, logits.max().item())
+#     Min = min(Min, logits.min().item())
+# print('[2] Min :', Min, 'Max :', Max)
+
+# print ("Initial quality test: " , utils.test(loaders['test'] , model, criterion))
+# print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
 
 optimizer = torch.optim.SGD(
     model.parameters(),
@@ -136,73 +176,84 @@ optimizer.load_state_dict(checkpoint['optimizer_state'])
 ensemble_size = 0
 predictions_sum = np.zeros((len(loaders['test'].dataset), num_classes))
 
-columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'ens_acc', 'time']
+columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_loss', 'te_acc', 'ens_acc', 'time']
 
 if args.regularizer is None:
     regularizer = None
 elif args.regularizer == 'MSE2':
     regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
-    
+
 
 utils.save_checkpoint(
-            args.dir,
-            start_epoch,
-            name='fge',
-            model_state=model.state_dict(),
-            optimizer_state=optimizer.state_dict()
-        )
+    args.dir,
+    start_epoch,
+    name='fge',
+    model_state=model.state_dict(),
+    optimizer_state=optimizer.state_dict(),
+    boost_weight=1.)
 
+logits_sum = 0
 for epoch in range(args.epochs):
     time_ep = time.time()
-    lr_schedule = utils.cyclic_learning_rate(epoch, args.cycle, args.lr_1, args.lr_2)
-    if args.weighted_samples is None:
-        train_res = utils.train(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
-    else:
-        train_res = utils.train_weighted(loaders['train'], model, optimizer, criterion, lr_schedule=lr_schedule, regularizer=regularizer)
-    test_res = utils.test(loaders['test'], model, criterion)
-    time_ep = time.time() - time_ep
-    predictions, targets = utils.predictions(loaders['test'], model)
-    ens_acc = None
+    lr_schedule = scheduler(epoch, args.cycle, args.lr_1, args.lr_2)
     
-    if (epoch + 1) % args.cycle == 0:
-        ensemble_size += 1
-        predictions_sum += predictions
-        ens_acc = 100.0 * np.mean(np.argmax(predictions_sum, axis=1) == targets)
+    train_res = utils.train_gb(
+        loaders['train'],
+        model,
+        optimizer,
+        criterion,
+        lr_schedule=lr_schedule,
+        regularizer=regularizer,
+        gb_version=args.version,
+        boost_lr=boost_lr)
+    test_res = utils.test_gb(
+        loaders['test'],
+        model,
+        criterion,
+        boost_lr=boost_lr)
+    time_ep = time.time() - time_ep
 
-    if (epoch + 1) % (args.cycle // 2) == 0:
+    ens_acc = None
+
+    if (epoch + 1) % args.cycle == 0:
+        if args.boost_lr == 'auto':
+            boost_lr = regularization.adjust_boost_lr(loaders['train'], model)
+        print ('Boost_lr : ', boost_lr)
+        ensemble_size += 1
+        logits, targets = utils.logits(loaders['test'], model)
+        logits_sum += boost_lr * logits
+        regularization.logits_info(logits, logits_sum=logits_sum)
+        ens_acc = 100.0 * np.mean(np.argmax(logits_sum, axis=1) == targets)
+
+#     if (epoch + 1) % (args.cycle // 2) == 0:
         utils.save_checkpoint(
             args.dir,
             start_epoch + epoch,
             name='fge',
             model_state=model.state_dict(),
-            optimizer_state=optimizer.state_dict()
+            optimizer_state=optimizer.state_dict(),
+            boost_weight=boost_lr
         )
-        
-    if args.regularizer is not None and (epoch + 1) % (args.cycle) == 0:
-        regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
-    if args.regularizer is not None and (epoch + 1) % (args.cycle // 2) == args.cycle // 2:
-        regularizer = None
-    
-    if args.weighted_samples is not None and (epoch + 1) % args.cycle == 0:
-        loaders, num_classes = data.loaders(
-            args.dataset,
-            args.data_path,
-            args.batch_size,
-            args.num_workers,
-            args.transform,
-            args.use_test,
-            shuffle_train=True,
-            weights_generator=regularization.dataset_weights_generator(
-                model,
-                args.weight_coef,
-                func_type=args.weighted_samples,
-                normalize=True,
-                batch_size=args.batch_size),
-        )
-        
 
-    values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'],
-              test_res['accuracy'], ens_acc, time_ep]
+#     if args.regularizer is not None and (epoch + 1) % (args.cycle) == 0:
+#         regularizer = regularization.TwoModelsMSE(model, args.reg_wd).reg
+#     if args.regularizer is not None and (epoch + 1) % (args.cycle // 2) == args.cycle // 2:
+#         regularizer = None
+
+    if args.weighted_samples is not None and (epoch + 1) % args.cycle == 0:
+        loaders['train'].dataset.update_logits(
+            boost_lr,
+            logits_generator=regularization.dataset_logits_generator(
+                model,
+                transform=getattr(getattr(
+                        data.Transforms,
+                        args.dataset),
+                    args.transform).train,
+                batch_size = args.batch_size))
+#         model = architecture.base(num_classes=num_classes, **architecture.kwargs)
+#         model.cuda()
+        
+    values = [epoch, lr_schedule(1.0), train_res['loss'], train_res['accuracy'], test_res['nll'], test_res['loss'], test_res['accuracy'], ens_acc, time_ep]
     table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
     if epoch % 40 == 0:
         table = table.split('\n')

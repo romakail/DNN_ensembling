@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import sys
 import tabulate
 import time
@@ -10,6 +11,8 @@ import curves
 import data
 import models
 import utils
+
+# from torchsummary import summary
 
 
 parser = argparse.ArgumentParser(description='DNN curve training')
@@ -60,8 +63,10 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='weight decay (default: 1e-4)')
+parser.add_argument('--device', type=int, default=0, metavar='N',
+                    help='number of device to train on (default: 0)')
 
-parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
+parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: random)')
 
 args = parser.parse_args()
 
@@ -71,8 +76,14 @@ with open(os.path.join(args.dir, 'command.sh'), 'w') as f:
     f.write('\n')
 
 torch.backends.cudnn.benchmark = True
+
+if args.seed == 0:
+    args.seed = random.randint(0, 1000000)   
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
+
+device = 'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu'
+torch.cuda.set_device(device)
 
 loaders, num_classes = data.loaders(
     args.dataset,
@@ -83,35 +94,22 @@ loaders, num_classes = data.loaders(
     args.use_test
 )
 
+train_len = 0
+test_len = 0
+for (x, _) in loaders['train']:
+    train_len += x.shape[0]
+for (x, _) in loaders['test']:
+    test_len += x.shape[0]
+print ('Train_len = ', train_len, 'test_len = ', test_len)
+
+# print (dir(models))
 architecture = getattr(models, args.model)
 
-if args.curve is None:
-    model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-else:
-    curve = getattr(curves, args.curve)
-    model = curves.CurveNet(
-        num_classes,
-        curve,
-        architecture.curve,
-        args.num_bends,
-        args.fix_start,
-        args.fix_end,
-        architecture_kwargs=architecture.kwargs,
-    )
-    base_model = None
-    if args.resume is None:
-        for path, k in [(args.init_start, 0), (args.init_end, args.num_bends - 1)]:
-            if path is not None:
-                if base_model is None:
-                    base_model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-                checkpoint = torch.load(path)
-                print('Loading %s as point #%d' % (path, k))
-                base_model.load_state_dict(checkpoint['model_state'])
-                model.import_base_parameters(base_model, k)
-        if args.init_linear:
-            print('Linear initialization.')
-            model.init_linear()
+
+model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 model.cuda()
+# summary(model, (3, 32, 32))
+
 
 
 def learning_rate_schedule(base_lr, epoch, total_epochs):
@@ -125,7 +123,7 @@ def learning_rate_schedule(base_lr, epoch, total_epochs):
     return factor * base_lr
 
 
-criterion = torch.nn.CrossEntropyLoss()
+criterion = F.cross_entropy
 regularizer = None if args.curve is None else curves.l2_regularizer(args.wd)
 optimizer = torch.optim.SGD(
     filter(lambda param: param.requires_grad, model.parameters()),
@@ -158,7 +156,6 @@ for epoch in range(start_epoch, args.epochs + 1):
     time_ep = time.time()
 
     lr = learning_rate_schedule(args.lr, epoch, args.epochs)
-    print ('lr = ', lr)
     utils.adjust_learning_rate(optimizer, lr)
 
     train_res = utils.train(loaders['train'], model, optimizer, criterion, regularizer)
@@ -184,6 +181,13 @@ for epoch in range(start_epoch, args.epochs + 1):
     else:
         table = table.split('\n')[2]
     print(table)
+    
+#     for idx, module in enumerate(model.modules()):
+#         if type(module) == torch.nn.modules.conv.Conv2d:
+#             p = module.state_dict()['weight']
+#             print ('[', idx, '] ', round(p.sum().item(), 3), end=' ', sep='')
+#     print (' ')
+    
 
 if args.epochs % args.save_freq != 0:
     utils.save_checkpoint(
