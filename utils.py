@@ -225,18 +225,12 @@ def test_gb(test_loader, model, criterion, regularizer=None, gb_version='classic
     model.eval()
 
     for input, target, logits in test_loader:
-#         print ('Len', len(data))
-#         input  = data[0]
-#         target = data[1]    
-#         if len(data) > 2:
-#             logits = data[2]
         
         input  = input .cuda(device=None, non_blocking=False)
         target = target.cuda(device=None, non_blocking=False)
         logits = logits.cuda(device=None, non_blocking=False)
         
         output = model(input, **kwargs)
-#         if len(data) > 2:
         if   gb_version == 'simple':
             nll = criterion(logits + boost_lr * output, labels).mean()
             loss = nll.clone()
@@ -244,15 +238,8 @@ def test_gb(test_loader, model, criterion, regularizer=None, gb_version='classic
             antigrad = one_hot(target, logits.shape[1]) - F.softmax(logits, dim=1)
             nll = criterion(output, antigrad).mean(dim=1).mean()
             loss = torch.nn.CrossEntropyLoss()(logits + boost_lr * output, target)
-#         else:
-#             print ('What, why am i here?')
-#             nll = criterion(output, target).mean()
-            
-        
-#         if regularizer is not None:
-#             loss += regularizer(model)
 
-        nll_sum += nll.item() * input.size(0)
+        nll_sum  += nll.item() * input.size(0)
         loss_sum += loss.item() * input.size(0)
 #         pred = output.data.argmax(1, keepdim=True)
 #         correct += pred.eq(target.data.view_as(pred)).sum().item()
@@ -260,8 +247,8 @@ def test_gb(test_loader, model, criterion, regularizer=None, gb_version='classic
         correct += pred.eq(target.data.view_as(pred)).sum().item()
 
     return {
-        'nll': nll_sum / len(test_loader.dataset),
-        'loss': loss_sum / len(test_loader.dataset),
+        'nll'     : nll_sum / len(test_loader.dataset),
+        'loss'    : loss_sum / len(test_loader.dataset),
         'accuracy': correct * 100.0 / len(test_loader.dataset),
     }
 

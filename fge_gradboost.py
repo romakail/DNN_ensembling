@@ -139,28 +139,6 @@ loaders, num_classes = data.loaders_gb(
         batch_size=args.batch_size),
 )
 
-# Max = 0
-# Min = 0
-# for (_, _, logits) in loaders['train']:
-#     Max = max(Max, logits.max().item())
-#     Min = min(Min, logits.min().item())
-# print('[1] Min :', Min, 'Max :', Max)
-    
-# loaders['train'].dataset.update_logits(
-#     logits_generator=regularization.dataset_logits_generator(
-#         model,
-#         transform=getattr(getattr(data.Transforms, args.dataset), args.transform).train,
-#         batch_size = args.batch_size))
-
-# Max = 0
-# Min = 0
-# for (_, _, logits) in loaders['train']:
-#     Max = max(Max, logits.max().item())
-#     Min = min(Min, logits.min().item())
-# print('[2] Min :', Min, 'Max :', Max)
-
-# print ("Initial quality test: " , utils.test(loaders['test'] , model, criterion))
-# print ("Initial quality train: ", utils.test(loaders['train'], model, criterion))
 
 optimizer = torch.optim.SGD(
     model.parameters(),
@@ -221,6 +199,7 @@ for epoch in range(args.epochs):
         print ('Boost_lr : ', boost_lr)
         ensemble_size += 1
         logits, targets = utils.logits(loaders['test'], model)
+        print ('Shapes :', logits.shape, targets.shape)
         logits_sum += boost_lr * logits
         regularization.logits_info(logits, logits_sum=logits_sum)
         ens_acc = 100.0 * np.mean(np.argmax(logits_sum, axis=1) == targets)
@@ -247,9 +226,19 @@ for epoch in range(args.epochs):
                 model,
                 transform=getattr(getattr(
                         data.Transforms,
-                        args.dataset),
+                        args.datasest),
                     args.transform).train,
                 batch_size = args.batch_size))
+        loaders['test'].dataset.update_logits(
+            boost_lr,
+            logits_generator=regularization.dataset_logits_generator(
+                model,
+                transform=getattr(getattr(
+                        data.Transforms,
+                        args.datasest),
+                    args.transform).test,
+                batch_size = args.batch_size))
+        
 #         model = architecture.base(num_classes=num_classes, **architecture.kwargs)
 #         model.cuda()
         
